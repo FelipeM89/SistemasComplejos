@@ -1,0 +1,48 @@
+"""
+Paquete codificacion.
+"""
+from .codificacion_senal import (
+    codificar_senal,
+    encode_signal,
+    decodificar_senal,
+    decode_signal,
+    codificar_muestra,
+    encode_sample,
+    decodificar_muestra,
+    decode_sample,
+    muestras_coseno,
+    cosine_samples,
+    tokens_enteros_desde_cinta,
+    integer_tokens_from_tape,
+    cinta_desde_tokens_enteros,
+    tape_from_integer_tokens,
+    ESCALA,
+    SCALE,
+    SEP,
+    ALFABETO_SENAL,
+    SIGNAL_ALPHABET,
+    PRECISION,
+)
+
+__all__ = [
+    "codificar_senal",
+    "encode_signal",
+    "decodificar_senal",
+    "decode_signal",
+    "codificar_muestra",
+    "encode_sample",
+    "decodificar_muestra",
+    "decode_sample",
+    "muestras_coseno",
+    "cosine_samples",
+    "tokens_enteros_desde_cinta",
+    "integer_tokens_from_tape",
+    "cinta_desde_tokens_enteros",
+    "tape_from_integer_tokens",
+    "ESCALA",
+    "SCALE",
+    "SEP",
+    "ALFABETO_SENAL",
+    "SIGNAL_ALPHABET",
+    "PRECISION",
+]
