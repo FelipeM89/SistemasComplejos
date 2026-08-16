@@ -1,83 +1,92 @@
-# Sistema de Comunicación Digital con Máquinas de Turing
+# Sistema de Comunicacion Digital con Maquinas de Turing
 
 **Autor:** [FelipeM89](https://github.com/FelipeM89)  
 **Materia:** Sistemas Complejos  
 
 ---
 
-## 📌 Resumen del Proyecto
+## 1. Resumen del Proyecto
 
-Este proyecto implementa una simulación ejecutable y formal de un **Sistema de Comunicación Digital** donde el procesamiento y transformación de la información es realizado por una composición secuencial de **Máquinas de Turing Deterministas (MT)**.
+Este proyecto implementa una simulacion formal y ejecutable de un **Sistema de Comunicacion Digital** en el cual todo el procesamiento computacional de la senal (generacion de portadora, modulacion, demodulacion y filtrado) es realizado por una composicion secuencial de **Maquinas de Turing Deterministas (MT)**.
 
-El flujo representa el modelo clásico de modulación y demodulación en banda base (**DSB-SC**):
+El sistema modela el esquema de modulacion en amplitud con portadora suprimida (DSB-SC):
 
 ```
        TRANSMISOR (Tx)                     RECEPTOR (Rx)
-       ───────────────                     ─────────────
-  x[n] ──→ [MT_MULT_TX] ──→ x[n]cos(ωn) ──→ CANAL ──→ [MT_MULT_RX] ──→ [MT_FILTER] ──→ x̂[n]
-                 ↑                                           ↑
-            [MT_OSC_TX]                                 [MT_OSC_RX]
+       ---------------                     -------------
+  x[n] ---> [MT_MULT_TX] ---> x[n]cos(wn) ---> CANAL ---> [MT_MULT_RX] ---> [MT_FILTER] ---> x^[n]
+                 ^                                             ^
+            [MT_OSC_TX]                                   [MT_OSC_RX]
 ```
 
 ---
 
-## ⚙️ ¿Qué se hizo? (Componentes del Sistema)
+## 2. Que se hizo (Arquitectura y Componentes)
 
-1. **Motor Formal de Máquina de Turing ($M = \langle Q, \Sigma, \Gamma, \delta, q_0, F \rangle$):**
-   - **Cinta infinita bidireccional** con símbolo blanco `_`.
-   - **Función de transición determinista** $\delta: (q, s) \to (q', s', \text{dir})$.
-   - Control de pasos máximos y registro de configuraciones paso a paso.
+### A. Motor Formal de Maquina de Turing
+Se implemento un simulador universal determinista basado en la definicion formal M = (Q, Sigma, Gamma, delta, q0, F):
+- **Cinta infinita bidireccional:** con soporte de lectura, escritura y desplazamientos L/R.
+- **Funcion de transicion:** delta: (estado_actual, simbolo_leido) -> (siguiente_estado, simbolo_escritura, direccion).
+- **Validador formal:** verificacion de pertenencia de estados, alfabetos y condiciones de parada.
 
-2. **Representación Discreta en Cinta (Punto Fijo Q8):**
-   - Muestras continuas discretizadas a enteros: $\text{entero} = \text{round}(\text{valor} \times 256)$.
-   - Alfabeto en cinta: $\Sigma = \{0..9, -, |, \_\}$. Formato: `| v0 | v1 | v2 | ... | vn |`.
+### B. Representacion Discreta en Cinta (Punto Fijo Q8)
+Para resolver la diferencia entre senales matematicas continuas y simbolos discretos de una MT:
+- Cada muestra se cuantiza en formato de punto fijo Q8: `entero = round(valor * 256)`.
+- En la cinta, cada muestra se escribe en base 10 (con signo '-' si es negativa) delimitada por el separador '|'.
 
-3. **Las 5 Máquinas de Turing + Medio Físico:**
-   - **MT 2 — `MT_OSC_TX` (Oscilador Tx):** Genera la portadora discreta $\cos(\omega \cdot n)$ en su cinta.
-   - **MT 1 — `MT_MULT_TX` (Multiplicador Tx):** Multiplica la señal de entrada $x[n]$ por la portadora.
-   - **`CANAL` (Medio Físico):** Modelado físico separado (ideal, atenuado o con ruido gaussiano $\sigma$).
-   - **MT 4 — `MT_OSC_RX` (Oscilador Rx):** Genera la portadora del receptor $\cos(\omega_{rx} \cdot n)$.
-   - **MT 3 — `MT_MULT_RX` (Multiplicador Rx):** Demodula la señal recibida: $y[n] \cdot \cos(\omega_{rx} n)$.
-   - **MT 5 — `MT_FILTER` (Filtro Pasa-Bajos):** Elimina la componente de alta frecuencia $2\omega$ mediante promedio móvil causal y aplica compensación de ganancia $\times 2$.
+Ejemplo de disposicion de la cinta:
+```
++---+-----+---+-----+---+------+---+------+---+
+| | | 256 | | | 138 | | | -107 | | | -253 | | | ...
++---+-----+---+-----+---+------+---+------+---+
+```
+
+### C. Bloques Computacionales (5 Maquinas de Turing y Canal)
+1. **MT 2 — MT_OSC_TX (Oscilador del Transmisor):** Genera la portadora discreta cos(w*n) escribiendo los digitos en su cinta.
+2. **MT 1 — MT_MULT_TX (Multiplicador del Transmisor):** Calcula el producto x[n] * cos(w*n) y ajusta la escala Q8.
+3. **CANAL (Medio Fisico):** Modelo del canal de propagacion (ideal, atenuado o con ruido gaussiano). Se separa academicamente del modelo de computo de las MTs.
+4. **MT 4 — MT_OSC_RX (Oscilador del Receptor):** Genera la portadora de demodulacion cos(w_rx*n).
+5. **MT 3 — MT_MULT_RX (Multiplicador del Receptor):** Produce y[n] * cos(w_rx*n) = x[n] * (1 + cos(2wn)) / 2.
+6. **MT 5 — MT_FILTER (Filtro Pasa-Bajos):** Promedio movil causal que elimina la componente de doble frecuencia (2w) y aplica compensacion de ganancia x2.
 
 ---
 
-## 📁 Estructura del Código
+## 3. Estructura del Repositorio
 
 ```
 SistemasComplejos/
 │
-├── principal.py                     # Punto de entrada principal en español
+├── principal.py                     # Punto de entrada principal en espanol
 ├── main.py                          # Enlace de compatibilidad
 ├── requirements.txt                 # Dependencias (numpy, matplotlib, pytest)
-├── .gitignore                       # Filtro de archivos para Git
+├── .gitignore                       # Exclusion de temporales
 │
-├── turing/                          # Motor formal de Máquina de Turing
-│   ├── cinta.py                     # Clase Cinta (lectura, escritura, movimiento L/R)
+├── turing/                          # Motor formal de Maquina de Turing
+│   ├── cinta.py                     # Clase Cinta
 │   ├── transicion.py                # Clase FuncionTransicion
 │   ├── maquina.py                   # Clase MaquinaDeTuring y ResultadoEjecucion
 │   └── __init__.py
 │
-├── codificacion/                    # Representación y formateo en cinta
-│   ├── codificacion_senal.py        # Codificación y decodificación punto fijo Q8
+├── codificacion/                    # Representacion Q8 y cinta
+│   ├── codificacion_senal.py        # Codificador/decodificador de cinta
 │   └── __init__.py
 │
-├── maquinas/                        # Bloques computacionales de MTs y canal
+├── maquinas/                        # Bloques de MTs y canal
 │   ├── oscilador.py                 # MaquinaOscilador (MT 2 y MT 4)
 │   ├── multiplicador.py             # MaquinaMultiplicador (MT 1 y MT 3)
 │   ├── filtro.py                    # MaquinaFiltro (MT 5)
-│   ├── canal.py                     # Modelo del medio físico
+│   ├── canal.py                     # Modelo del medio fisico
 │   └── __init__.py
 │
-├── comunicacion/                    # Canalización y composición del sistema
+├── comunicacion/                    # Canalizacion completa
 │   ├── sistema.py                   # Clase SistemaComunicacion
 │   └── __init__.py
 │
-├── visualizacion/                   # Gráficos con Matplotlib
-│   ├── graficos.py                  # Gráficos de canalización y error
+├── visualizacion/                   # Graficos con Matplotlib
+│   ├── graficos.py                  # Generador de graficos de senales y error
 │   └── __init__.py
 │
-└── pruebas/                         # Suite de pruebas automatizadas (100% pasando)
+└── pruebas/                         # Suite de pruebas automatizadas
     ├── test_motor_turing.py
     ├── test_maquinas.py
     ├── test_sistema.py
@@ -86,37 +95,37 @@ SistemasComplejos/
 
 ---
 
-## 🚀 Instrucciones de Ejecución
+## 4. Instrucciones de Ejecucion
 
-### 1. Instalar dependencias
+### Instalacion de dependencias
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Ejecutar la simulación principal
+### Ejecucion de la simulacion
 ```bash
-# Modo con gráficos en pantalla
+# Modo con graficos en pantalla
 python principal.py
 
-# Modo solo consola (sin ventanas emergentes)
+# Modo solo consola (sin interfaz grafica)
 python principal.py --sin-graficos
 
-# Simulación con ruido en el canal
+# Modo canal con ruido gaussiano
 python principal.py --ruido --sin-graficos
 
-# Simulación con desajuste de frecuencia (ω_rx ≠ ω_tx)
+# Modo desajuste de frecuencia (omega_rx != omega_tx)
 python principal.py --desajuste --sin-graficos
 ```
 
-### 3. Ejecutar pruebas automatizadas
+### Ejecucion de pruebas automatizadas
 ```bash
 python -m pytest -v
 ```
 
 ---
 
-## 📊 Resultados de Fidelidad
+## 5. Metricas de Fidelidad
 
-- **MAE (Error Absoluto Medio):** $\approx 0.06$ (Calidad Excelente)
-- **MSE (Error Cuadrático Medio):** $\approx 0.005$
-- **Pruebas unitarias e integración:** 102/102 pruebas exitosas.
+- **MAE (Error Absoluto Medio):** ~0.06 (Calidad Excelente)
+- **MSE (Error Cuadratico Medio):** ~0.005
+- **Pruebas automatizadas:** 102/102 pruebas exitosas.
