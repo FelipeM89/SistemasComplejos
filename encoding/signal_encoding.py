@@ -88,7 +88,7 @@ def encode_signal(samples: list[float]) -> list[str]:
 def _parse_tape_tokens(tape_symbols: list[str]) -> list[str]:
     """Divide el contenido de la cinta por SEP y descarta tokens vacios o blancos."""
     content = "".join(tape_symbols)
-    return [t for t in content.split(SEP) if t and t != BLANCO]
+    return [t.strip(BLANCO) for t in content.split(SEP) if t.strip(BLANCO)]
 
 
 def decode_sample(token: str) -> float:

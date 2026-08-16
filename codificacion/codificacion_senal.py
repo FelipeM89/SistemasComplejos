@@ -62,7 +62,7 @@ encode_signal = codificar_senal
 def _analizar_tokens_cinta(simbolos_cinta: list[str]) -> list[str]:
     """Divide el contenido de la cinta por SEP y descarta tokens vacios o blancos."""
     contenido = "".join(simbolos_cinta)
-    return [t for t in contenido.split(SEP) if t and t != BLANCO]
+    return [t.strip(BLANCO) for t in contenido.split(SEP) if t.strip(BLANCO)]
 
 
 _parse_tape_tokens = _analizar_tokens_cinta

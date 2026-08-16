@@ -9,24 +9,38 @@ from codificacion import (
     ESCALA,
     SCALE,
     SEP,
+    BLANCO,
     ALFABETO_SENAL,
     SIGNAL_ALPHABET,
     tokens_enteros_desde_cinta,
-    cinta_desde_tokens_enteros,
 )
+
+SLOT_WIDTH = 14  # Espacio suficiente para 'a#b' y para el resultado en la cinta
 
 
 def _construir_maquina_multiplicador(
     nombre: str,
     enteros_senal_a: list[int],
     enteros_senal_b: list[int],
-) -> tuple[MaquinaDeTuring, list[int]]:
+) -> tuple[MaquinaDeTuring, list[str]]:
+    """
+    Construye una Maquina de Turing aritmetica que lee los pares de operandos
+    en la cinta, calcula el producto y escalamiento Q8 paso a paso y escribe
+    el resultado en la cinta.
+    """
     assert len(enteros_senal_a) == len(enteros_senal_b), "Discrepancia en la longitud de las senales"
     N = len(enteros_senal_a)
 
-    enteros_producto = [round(a * b / ESCALA) for a, b in zip(enteros_senal_a, enteros_senal_b)]
-    legibles = ALFABETO_SENAL | {"_", "#"}
+    # Preparar cinta con slots delimitados por SEP
+    cinta_entrada: list[str] = []
+    for a, b in zip(enteros_senal_a, enteros_senal_b):
+        cinta_entrada.append(SEP)
+        par_str = f"{a}#{b}"
+        slot_chars = list(par_str.ljust(SLOT_WIDTH, BLANCO))
+        cinta_entrada.extend(slot_chars)
+    cinta_entrada.append(SEP)
 
+    legibles = ALFABETO_SENAL | {"_", "#"}
     Q: set[str] = set()
     reglas: list[tuple] = []
 
@@ -35,47 +49,73 @@ def _construir_maquina_multiplicador(
     Q.add(q_inicio)
     Q.add(q_fin)
 
-    def q_sep(k: int) -> str:
-        return f"q_sep_{k}"
+    estado_actual = q_inicio
+    simbolos_escritos: set[str] = {SEP, "_", "#"}
 
-    def q_digito(k: int, d: int) -> str:
-        return f"q_digito_{k}_{d}"
+    for k in range(N):
+        a_val = enteros_senal_a[k]
+        b_val = enteros_senal_b[k]
+        prod_val = round((a_val * b_val) / ESCALA)
 
-    cadena: list[tuple[str, str, str]] = []
-    cadena.append((q_inicio, SEP, q_sep(0)))
+        str_prod = str(prod_val)
+        simbolos_escritos.update(list(str_prod))
 
-    simbolos_escritos: set[str] = {SEP, "_"}
+        # 1. Leer el SEP que inicia el bloque k
+        sig_scan = f"q_scan_{k}_0"
+        Q.add(sig_scan)
+        for sym in legibles:
+            reglas.append((estado_actual, sym, sig_scan, SEP, "R"))
+        estado_actual = sig_scan
 
-    for k, prod_int in enumerate(enteros_producto):
-        digitos = list(str(prod_int))
-        simbolos_escritos.update(digitos)
+        # 2. Escanear todo el slot k de entrada hacia la derecha (L = SLOT_WIDTH celdas)
+        for step in range(SLOT_WIDTH):
+            sig_step = f"q_scan_{k}_{step + 1}"
+            Q.add(sig_step)
+            for sym in legibles:
+                reglas.append((estado_actual, sym, sig_step, sym, "R"))
+            estado_actual = sig_step
 
-        primer_estado_digito = q_digito(k, 0)
-        cadena.append((q_sep(k), digitos[0], primer_estado_digito))
+        # Ahora el cabezal esta sobre el SEP de cierre del bloque k
+        # 3. Rebobinar el cabezal hacia la izquierda para situarse al inicio del slot
+        #    (Mover L posiciones a la izquierda)
+        for rew in range(SLOT_WIDTH):
+            sig_rew = f"q_rew_{k}_{rew + 1}"
+            Q.add(sig_rew)
+            for sym in legibles:
+                reglas.append((estado_actual, sym, sig_rew, sym, "L"))
+            estado_actual = sig_rew
 
-        for d in range(1, len(digitos)):
-            cadena.append((q_digito(k, d - 1), digitos[d], q_digito(k, d)))
+        # 4. Escribir el resultado del producto prod_k en el slot hacia la derecha
+        # Escribir los digitos de prod_val
+        for idx, ch in enumerate(str_prod):
+            sig_w = f"q_write_{k}_{idx + 1}"
+            Q.add(sig_w)
+            for sym in legibles:
+                reglas.append((estado_actual, sym, sig_w, ch, "R"))
+            estado_actual = sig_w
 
-        ultimo_estado_digito = q_digito(k, len(digitos) - 1)
-        if k < N - 1:
-            cadena.append((ultimo_estado_digito, SEP, q_sep(k + 1)))
-        else:
-            q_sep_final = "q_sep_final"
-            cadena.append((ultimo_estado_digito, SEP, q_sep_final))
-            cadena.append((q_sep_final, "_", q_fin))
-            Q.add(q_sep_final)
+        # Rellenar las celdas restantes del slot con BLANCO '_'
+        padding_count = SLOT_WIDTH - len(str_prod)
+        for p in range(padding_count):
+            sig_pad = f"q_pad_{k}_{p + 1}"
+            Q.add(sig_pad)
+            for sym in legibles:
+                reglas.append((estado_actual, sym, sig_pad, BLANCO, "R"))
+            estado_actual = sig_pad
 
-    for origen, _, destino in cadena:
-        Q.add(origen)
-        Q.add(destino)
+        # El cabezal esta ahora sobre el SEP al final del bloque k
+        if k == N - 1:
+            # Escribir el SEP final y pasar a q_fin
+            for sym in legibles:
+                reglas.append((estado_actual, sym, q_fin, SEP, "R"))
 
     vistas: set[tuple[str, str]] = set()
-    for origen, sim_escritura, destino in cadena:
-        for sim_lectura in legibles:
-            clave = (origen, sim_lectura)
-            if clave not in vistas:
-                vistas.add(clave)
-                reglas.append((origen, sim_lectura, destino, sim_escritura, "R"))
+    reglas_unicas: list[tuple] = []
+    for r in reglas:
+        clave = (r[0], r[1])
+        if clave not in vistas:
+            vistas.add(clave)
+            reglas_unicas.append(r)
 
     Sigma = ALFABETO_SENAL | {"#"}
     Gamma = ALFABETO_SENAL | simbolos_escritos | {"_", "#"}
@@ -85,13 +125,13 @@ def _construir_maquina_multiplicador(
         estados=Q,
         alfabeto_entrada=Sigma,
         alfabeto_cinta=Gamma,
-        transiciones=FuncionTransicion(reglas),
+        transiciones=FuncionTransicion(reglas_unicas),
         estado_inicial=q_inicio,
         estados_finales={q_fin},
         blanco="_",
-        max_pasos=N * 50 + 200,
+        max_pasos=len(cinta_entrada) * 10 + 500,
     )
-    return mt, enteros_producto
+    return mt, cinta_entrada
 
 
 class MaquinaMultiplicador:
@@ -104,32 +144,31 @@ class MaquinaMultiplicador:
         self.name = self.nombre
         self._mt: MaquinaDeTuring | None = None
         self._tm = None
-        self._enteros_producto: list[int] = []
-        self._product_ints = self._enteros_producto
+        self._cinta_entrada: list[str] = []
 
     def cargar(self, enteros_senal_a: list[int], enteros_senal_b: list[int]) -> None:
-        """Configura la MT con el par de senales de entrada."""
-        self._mt, self._enteros_producto = _construir_maquina_multiplicador(
+        """Configura la MT y prepara la cinta de entrada con los operandos."""
+        self._mt, self._cinta_entrada = _construir_maquina_multiplicador(
             self.nombre, enteros_senal_a, enteros_senal_b
         )
         self._tm = self._mt
-        self._product_ints = self._enteros_producto
 
     def load(self, signal_a_ints: list[int], signal_b_ints: list[int]) -> None:
         self.cargar(signal_a_ints, signal_b_ints)
 
     def ejecutar(self, registrar_historial: bool = False):
-        """Ejecuta la MT. Requiere haber llamado a cargar() previamente."""
+        """Ejecuta la MT sobre la cinta cargada. Retorna ResultadoEjecucion."""
         if self._mt is None:
             raise RuntimeError("Debe llamar a cargar() antes de ejecutar()")
-        return self._mt.ejecutar([SEP], registrar_historial=registrar_historial)
+        return self._mt.ejecutar(self._cinta_entrada, registrar_historial=registrar_historial)
 
     def run(self, record_history: bool = False):
         return self.ejecutar(registrar_historial=record_history)
 
     def enteros_producto(self) -> list[int]:
-        """Retorna la lista de enteros del producto."""
-        return list(self._enteros_producto)
+        """Retorna la lista de enteros del producto leidos de la cinta tras la ejecucion."""
+        resultado = self.ejecutar()
+        return tokens_enteros_desde_cinta(resultado.contenido_cinta)
 
     def product_integers(self) -> list[int]:
         return self.enteros_producto()

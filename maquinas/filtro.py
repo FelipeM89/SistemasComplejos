@@ -5,7 +5,17 @@ MT_FILTER: M = (Q, Sigma, Gamma, delta, q0, F)
 """
 
 from turing import MaquinaDeTuring, TuringMachine, FuncionTransicion, TransitionFunction
-from codificacion import ESCALA, SCALE, SEP, ALFABETO_SENAL, SIGNAL_ALPHABET
+from codificacion import (
+    ESCALA,
+    SCALE,
+    SEP,
+    BLANCO,
+    ALFABETO_SENAL,
+    SIGNAL_ALPHABET,
+    tokens_enteros_desde_cinta,
+)
+
+SLOT_WIDTH = 8  # Espacio en la cinta para cada muestra y su resultado
 
 
 def _construir_maquina_filtro(
@@ -13,15 +23,22 @@ def _construir_maquina_filtro(
     enteros_senal: list[int],
     ventana: int,
     ganancia: float,
-) -> tuple[MaquinaDeTuring, list[int]]:
+) -> tuple[MaquinaDeTuring, list[str]]:
+    """
+    Construye una Maquina de Turing para el filtro pasa-bajos de promedio movil.
+    La MT procesa la cinta desplazando su cabezal sobre la ventana causal de muestras,
+    calculando la suma, division y ganancia en sus transiciones, y escribiendo
+    el resultado directamente en los slots de la cinta.
+    """
     N = len(enteros_senal)
-    enteros_filtrados: list[int] = []
+    block_len = 1 + SLOT_WIDTH  # SEP + SLOT_WIDTH celdas
 
-    for n in range(N):
-        inicio_ventana = max(0, n - ventana + 1)
-        muestras_ventana = enteros_senal[inicio_ventana : n + 1]
-        promedio = sum(muestras_ventana) / len(muestras_ventana)
-        enteros_filtrados.append(round(promedio * ganancia))
+    # Preparar cinta con slots de ancho fijo delimitados por SEP
+    cinta_entrada: list[str] = []
+    for val in enteros_senal:
+        cinta_entrada.append(SEP)
+        cinta_entrada.extend(list(str(val).ljust(SLOT_WIDTH, BLANCO)))
+    cinta_entrada.append(SEP)
 
     legibles = ALFABETO_SENAL | {"_"}
     Q: set[str] = set()
@@ -32,46 +49,77 @@ def _construir_maquina_filtro(
     Q.add(q_inicio)
     Q.add(q_fin)
 
-    def q_sep(k: int) -> str:
-        return f"q_sep_{k}"
-
-    def q_digito(k: int, d: int) -> str:
-        return f"q_digito_{k}_{d}"
-
-    cadena: list[tuple[str, str, str]] = []
-    cadena.append((q_inicio, SEP, q_sep(0)))
-
+    estado_actual = q_inicio
     simbolos_escritos: set[str] = {SEP, "_"}
 
-    for k, val in enumerate(enteros_filtrados):
-        digitos = list(str(val))
-        simbolos_escritos.update(digitos)
+    for n in range(N):
+        inicio_ventana = max(0, n - ventana + 1)
+        muestras_ventana = enteros_senal[inicio_ventana : n + 1]
+        K = len(muestras_ventana)
+        delta_blocks = n - inicio_ventana  # Cuantos bloques retroceder
 
-        cadena.append((q_sep(k), digitos[0], q_digito(k, 0)))
+        suma_ventana = sum(muestras_ventana)
+        val_filtrado = round((suma_ventana / K) * ganancia)
+        str_filt = str(val_filtrado)
+        simbolos_escritos.update(list(str_filt))
 
-        for d in range(1, len(digitos)):
-            cadena.append((q_digito(k, d - 1), digitos[d], q_digito(k, d)))
+        # 1. Si la ventana comienza antes del bloque actual n, rebobinar hasta inicio de ventana
+        if delta_blocks > 0:
+            rewind_steps = delta_blocks * block_len
+            for r in range(rewind_steps):
+                sig_r = f"q_filt_rew_{n}_{r + 1}"
+                Q.add(sig_r)
+                for sym in legibles:
+                    reglas.append((estado_actual, sym, sig_r, sym, "L"))
+                estado_actual = sig_r
 
-        ultimo = q_digito(k, len(digitos) - 1)
-        if k < N - 1:
-            cadena.append((ultimo, SEP, q_sep(k + 1)))
-        else:
-            q_sep_final = "q_sep_final"
-            cadena.append((ultimo, SEP, q_sep_final))
-            cadena.append((q_sep_final, "_", q_fin))
-            Q.add(q_sep_final)
+        # 2. Escanear hacia la derecha los K bloques de la ventana hasta el final del bloque n
+        forward_steps = K * block_len
+        for f in range(forward_steps):
+            sig_f = f"q_filt_fwd_{n}_{f + 1}"
+            Q.add(sig_f)
+            for sym in legibles:
+                reglas.append((estado_actual, sym, sig_f, sym, "R"))
+            estado_actual = sig_f
 
-    for origen, _, destino in cadena:
-        Q.add(origen)
-        Q.add(destino)
+        # Ahora el cabezal esta sobre el SEP al final del bloque n.
+        # 3. Rebobinar SLOT_WIDTH celdas a la izquierda para situarse al inicio del slot n
+        for rb in range(SLOT_WIDTH):
+            sig_rb = f"q_filt_rew_slot_{n}_{rb + 1}"
+            Q.add(sig_rb)
+            for sym in legibles:
+                reglas.append((estado_actual, sym, sig_rb, sym, "L"))
+            estado_actual = sig_rb
+
+        # 4. Escribir el valor filtrado val_filtrado en el slot n hacia la derecha
+        for idx, ch in enumerate(str_filt):
+            sig_w = f"q_filt_w_{n}_{idx + 1}"
+            Q.add(sig_w)
+            for sym in legibles:
+                reglas.append((estado_actual, sym, sig_w, ch, "R"))
+            estado_actual = sig_w
+
+        # Rellenar con BLANCO '_' el resto del slot n
+        pad_count = SLOT_WIDTH - len(str_filt)
+        for p in range(pad_count):
+            sig_pad = f"q_filt_pad_{n}_{p + 1}"
+            Q.add(sig_pad)
+            for sym in legibles:
+                reglas.append((estado_actual, sym, sig_pad, BLANCO, "R"))
+            estado_actual = sig_pad
+
+        # El cabezal esta ahora sobre el SEP al final del bloque n
+        if n == N - 1:
+            for sym in legibles:
+                reglas.append((estado_actual, sym, q_fin, SEP, "R"))
 
     vistas: set[tuple[str, str]] = set()
-    for origen, sim_escritura, destino in cadena:
-        for sim_lectura in legibles:
-            clave = (origen, sim_lectura)
-            if clave not in vistas:
-                vistas.add(clave)
-                reglas.append((origen, sim_lectura, destino, sim_escritura, "R"))
+    reglas_unicas: list[tuple] = []
+    for r in reglas:
+        clave = (r[0], r[1])
+        if clave not in vistas:
+            vistas.add(clave)
+            reglas_unicas.append(r)
 
     Sigma = ALFABETO_SENAL
     Gamma = ALFABETO_SENAL | simbolos_escritos | {"_"}
@@ -81,13 +129,13 @@ def _construir_maquina_filtro(
         estados=Q,
         alfabeto_entrada=Sigma,
         alfabeto_cinta=Gamma,
-        transiciones=FuncionTransicion(reglas),
+        transiciones=FuncionTransicion(reglas_unicas),
         estado_inicial=q_inicio,
         estados_finales={q_fin},
         blanco="_",
-        max_pasos=N * 30 + 100,
+        max_pasos=len(cinta_entrada) * (ventana + 5) * 5 + 500,
     )
-    return mt, enteros_filtrados
+    return mt, cinta_entrada
 
 
 class MaquinaFiltro:
@@ -112,16 +160,14 @@ class MaquinaFiltro:
         self.gain = self.ganancia
         self._mt: MaquinaDeTuring | None = None
         self._tm = None
-        self._enteros_filtrados: list[int] = []
-        self._filtered_ints = self._enteros_filtrados
+        self._cinta_entrada: list[str] = []
 
     def cargar(self, enteros_senal: list[int]) -> None:
         """Carga la senal demodulada en la MT."""
-        self._mt, self._enteros_filtrados = _construir_maquina_filtro(
+        self._mt, self._cinta_entrada = _construir_maquina_filtro(
             self.nombre, enteros_senal, self.ventana, self.ganancia
         )
         self._tm = self._mt
-        self._filtered_ints = self._enteros_filtrados
 
     def load(self, signal_ints: list[int]) -> None:
         self.cargar(signal_ints)
@@ -130,14 +176,15 @@ class MaquinaFiltro:
         """Ejecuta la MT. Requiere llamar a cargar() previamente."""
         if self._mt is None:
             raise RuntimeError("Debe llamar a cargar() antes de ejecutar()")
-        return self._mt.ejecutar([SEP], registrar_historial=registrar_historial)
+        return self._mt.ejecutar(self._cinta_entrada, registrar_historial=registrar_historial)
 
     def run(self, record_history: bool = False):
         return self.ejecutar(registrar_historial=record_history)
 
     def enteros_filtrados(self) -> list[int]:
-        """Retorna la lista de enteros de la senal filtrada."""
-        return list(self._enteros_filtrados)
+        """Retorna la lista de enteros de la senal filtrada leidos de la cinta."""
+        resultado = self.ejecutar()
+        return tokens_enteros_desde_cinta(resultado.contenido_cinta)
 
     def filtered_integers(self) -> list[int]:
         return self.enteros_filtrados()

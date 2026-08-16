@@ -4,12 +4,18 @@ MaquinaOscilador — Maquina de Turing que genera una portadora discreta en su c
 MT_OSC: M = (Q, Sigma, Gamma, delta, q0, F)
 """
 
+import math
 from turing import MaquinaDeTuring, TuringMachine, FuncionTransicion, TransitionFunction
 from codificacion import ESCALA, SCALE, SEP, ALFABETO_SENAL, SIGNAL_ALPHABET, muestras_coseno, cosine_samples
 
 
 def _construir_maquina_oscilador(nombre: str, n_muestras: int, omega: float) -> MaquinaDeTuring:
-    enteros_cos = [round(v * ESCALA) for v in muestras_coseno(n_muestras, omega)]
+    """
+    Construye la Maquina de Turing para el oscilador.
+    El oscilador es un generador periodico autonomo modelado como una MT.
+    Sus transiciones definen el ciclo de estados de fase que genera la
+    forma de onda discreta muestreada en formato Q8 celda por celda en la cinta.
+    """
     legibles = ALFABETO_SENAL | {"_"}
 
     Q: set[str] = set()
@@ -29,8 +35,13 @@ def _construir_maquina_oscilador(nombre: str, n_muestras: int, omega: float) -> 
     cadena: list[tuple[str, str, str]] = []
     cadena.append((q_inicio, SEP, q_sep(0)))
 
-    for k, cos_int in enumerate(enteros_cos):
-        digitos = list(str(cos_int))
+    simbolos_escritos: set[str] = {SEP, "_"}
+
+    for k in range(n_muestras):
+        # Cada estado de fase k produce su amplitud Q8 discreta: round(cos(w*k) * ESCALA)
+        val_k = round(math.cos(omega * k) * ESCALA)
+        digitos = list(str(val_k))
+        simbolos_escritos.update(digitos)
 
         primer_estado_digito = q_digito(k, 0)
         cadena.append((q_sep(k), digitos[0], primer_estado_digito))
@@ -53,19 +64,13 @@ def _construir_maquina_oscilador(nombre: str, n_muestras: int, omega: float) -> 
         Q.add(origen)
         Q.add(destino)
 
-    simbolos_escritos: set[str] = set()
-    for origen, sim_escritura, destino in cadena:
-        simbolos_escritos.add(sim_escritura)
-        for sim_lectura in legibles:
-            reglas.append((origen, sim_lectura, destino, sim_escritura, "R"))
-
     vistas: set[tuple[str, str]] = set()
-    reglas_unicas: list[tuple] = []
-    for r in reglas:
-        clave = (r[0], r[1])
-        if clave not in vistas:
-            vistas.add(clave)
-            reglas_unicas.append(r)
+    for origen, sim_escritura, destino in cadena:
+        for sim_lectura in legibles:
+            clave = (origen, sim_lectura)
+            if clave not in vistas:
+                vistas.add(clave)
+                reglas.append((origen, sim_lectura, destino, sim_escritura, "R"))
 
     Sigma = ALFABETO_SENAL
     Gamma = ALFABETO_SENAL | simbolos_escritos | {"_"}
@@ -75,7 +80,7 @@ def _construir_maquina_oscilador(nombre: str, n_muestras: int, omega: float) -> 
         estados=Q,
         alfabeto_entrada=Sigma,
         alfabeto_cinta=Gamma,
-        transiciones=FuncionTransicion(reglas_unicas),
+        transiciones=FuncionTransicion(reglas),
         estado_inicial=q_inicio,
         estados_finales={q_fin},
         blanco="_",
@@ -93,7 +98,6 @@ class MaquinaOscilador:
         nombre: str | None = None,
         n_muestras: int | None = None,
         omega: float = 1.0,
-        # Alias en ingles
         name: str | None = None,
         n_samples: int | None = None,
     ):
@@ -102,21 +106,22 @@ class MaquinaOscilador:
         self.n_muestras = n_muestras if n_muestras is not None else (n_samples if n_samples is not None else 16)
         self.n_samples = self.n_muestras
         self.omega = omega
-        self._enteros_cos = [round(v * ESCALA) for v in muestras_coseno(self.n_muestras, omega)]
-        self._cos_ints = self._enteros_cos
         self._mt = _construir_maquina_oscilador(self.nombre, self.n_muestras, omega)
         self._tm = self._mt
+        self._cinta_inicial = [SEP] * self.n_muestras
 
     def ejecutar(self, registrar_historial: bool = False):
-        """Ejecuta la MT sobre la cinta. Retorna ResultadoEjecucion."""
-        return self._mt.ejecutar([SEP], registrar_historial=registrar_historial)
+        """Ejecuta la MT sobre la cinta de entrada. Retorna ResultadoEjecucion."""
+        return self._mt.ejecutar(self._cinta_inicial, registrar_historial=registrar_historial)
 
     def run(self, record_history: bool = False):
         return self.ejecutar(registrar_historial=record_history)
 
     def enteros_portadora(self) -> list[int]:
-        """Retorna la lista de enteros Q8 de la portadora."""
-        return list(self._enteros_cos)
+        """Ejecuta la MT y retorna la lista de enteros Q8 leidos de su cinta de salida."""
+        resultado = self.ejecutar()
+        from codificacion import tokens_enteros_desde_cinta
+        return tokens_enteros_desde_cinta(resultado.contenido_cinta)
 
     def carrier_integers(self) -> list[int]:
         return self.enteros_portadora()
