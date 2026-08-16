@@ -4,14 +4,12 @@ MaquinaFiltro — Maquina de Turing que implementa un filtro pasa-bajos (promedi
 MT_FILTER: M = (Q, Sigma, Gamma, delta, q0, F)
 """
 
-from turing import MaquinaDeTuring, TuringMachine, FuncionTransicion, TransitionFunction
+from turing import MaquinaDeTuring, FuncionTransicion
 from codificacion import (
     ESCALA,
-    SCALE,
     SEP,
     BLANCO,
     ALFABETO_SENAL,
-    SIGNAL_ALPHABET,
     tokens_enteros_desde_cinta,
 )
 
@@ -58,9 +56,10 @@ def _construir_maquina_filtro(
         K = len(muestras_ventana)
         delta_blocks = n - inicio_ventana  # Cuantos bloques retroceder
 
+        # Suma de la ventana y division entera con ganancia
         suma_ventana = sum(muestras_ventana)
-        val_filtrado = round((suma_ventana / K) * ganancia)
-        str_filt = str(val_filtrado)
+        val_escalado = round((suma_ventana / K) * ganancia)
+        str_filt = str(val_escalado)
         simbolos_escritos.update(list(str_filt))
 
         # 1. Si la ventana comienza antes del bloque actual n, rebobinar hasta inicio de ventana
@@ -91,7 +90,7 @@ def _construir_maquina_filtro(
                 reglas.append((estado_actual, sym, sig_rb, sym, "L"))
             estado_actual = sig_rb
 
-        # 4. Escribir el valor filtrado val_filtrado en el slot n hacia la derecha
+        # 4. Escribir el valor filtrado val_escalado en el slot n hacia la derecha
         for idx, ch in enumerate(str_filt):
             sig_w = f"q_filt_w_{n}_{idx + 1}"
             Q.add(sig_w)
@@ -148,18 +147,11 @@ class MaquinaFiltro:
         nombre: str | None = None,
         ventana: int = 3,
         ganancia: float = 2.0,
-        name: str | None = None,
-        window: int | None = None,
-        gain: float | None = None,
     ):
-        self.nombre = nombre or name or "MT_FILTER"
-        self.name = self.nombre
-        self.ventana = window if window is not None else ventana
-        self.window = self.ventana
-        self.ganancia = gain if gain is not None else ganancia
-        self.gain = self.ganancia
+        self.nombre = nombre or "MT_FILTER"
+        self.ventana = ventana
+        self.ganancia = ganancia
         self._mt: MaquinaDeTuring | None = None
-        self._tm = None
         self._cinta_entrada: list[str] = []
 
     def cargar(self, enteros_senal: list[int]) -> None:
@@ -167,10 +159,6 @@ class MaquinaFiltro:
         self._mt, self._cinta_entrada = _construir_maquina_filtro(
             self.nombre, enteros_senal, self.ventana, self.ganancia
         )
-        self._tm = self._mt
-
-    def load(self, signal_ints: list[int]) -> None:
-        self.cargar(signal_ints)
 
     def ejecutar(self, registrar_historial: bool = False):
         """Ejecuta la MT. Requiere llamar a cargar() previamente."""
@@ -178,24 +166,12 @@ class MaquinaFiltro:
             raise RuntimeError("Debe llamar a cargar() antes de ejecutar()")
         return self._mt.ejecutar(self._cinta_entrada, registrar_historial=registrar_historial)
 
-    def run(self, record_history: bool = False):
-        return self.ejecutar(registrar_historial=record_history)
-
     def enteros_filtrados(self) -> list[int]:
         """Retorna la lista de enteros de la senal filtrada leidos de la cinta."""
         resultado = self.ejecutar()
         return tokens_enteros_desde_cinta(resultado.contenido_cinta)
 
-    def filtered_integers(self) -> list[int]:
-        return self.enteros_filtrados()
-
     def describir(self) -> dict:
         if self._mt is None:
             return {"nombre": self.nombre, "estado": "no cargada"}
         return self._mt.describir()
-
-    def describe(self) -> dict:
-        return self.describir()
-
-
-FilterMachine = MaquinaFiltro

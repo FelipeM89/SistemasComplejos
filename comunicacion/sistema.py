@@ -3,31 +3,18 @@ SistemaComunicacion — compone las 5 Maquinas de Turing y el canal en una canal
 """
 
 from dataclasses import dataclass, field
-from typing import Any
-
 from maquinas import (
     MaquinaOscilador,
-    OscillatorMachine,
     MaquinaMultiplicador,
-    MultiplierMachine,
     MaquinaFiltro,
-    FilterMachine,
     Canal,
-    Channel,
     ConfiguracionCanal,
-    ChannelConfig,
 )
 from codificacion import (
-    codificar_senal,
-    encode_signal,
-    decodificar_senal,
-    decode_signal,
     tokens_enteros_desde_cinta,
-    integer_tokens_from_tape,
     ESCALA,
-    SCALE,
 )
-from turing import ResultadoEjecucion, ExecutionResult
+from turing import ResultadoEjecucion
 
 
 @dataclass
@@ -38,51 +25,15 @@ class ResultadoEtapa:
     enteros_senal: list[int]
     descripcion: str
 
-    # Alias en ingles
-    name: str | None = None
-    tm_result: ResultadoEjecucion | None = None
-    signal_ints: list[int] | None = None
-    description: str | None = None
-
-    def __post_init__(self):
-        if self.name is not None:
-            self.nombre = self.name
-        else:
-            self.name = self.nombre
-
-        if self.tm_result is not None:
-            self.resultado_mt = self.tm_result
-        else:
-            self.tm_result = self.resultado_mt
-
-        if self.signal_ints is not None:
-            self.enteros_senal = self.signal_ints
-        else:
-            self.signal_ints = self.enteros_senal
-
-        if self.description is not None:
-            self.descripcion = self.description
-        else:
-            self.description = self.descripcion
-
     def senal_flotantes(self) -> list[float]:
         """Convierte los enteros en punto fijo Q8 a valores flotantes."""
         return [v / ESCALA for v in self.enteros_senal]
-
-    def signal_floats(self) -> list[float]:
-        return self.senal_flotantes()
 
     def resumen(self) -> str:
         """Resumen textual del resultado de la etapa."""
         if self.resultado_mt:
             return self.resultado_mt.resumen()
         return f"[{self.nombre}] (componente fisico / no-MT)"
-
-    def summary(self) -> str:
-        return self.resumen()
-
-
-StageResult = ResultadoEtapa
 
 
 @dataclass
@@ -91,27 +42,9 @@ class ResultadoSistema:
     senal_entrada: list[float]
     etapas: list[ResultadoEtapa] = field(default_factory=list)
 
-    # Alias en ingles
-    input_signal: list[float] | None = None
-    stages: list[ResultadoEtapa] | None = None
-
-    def __post_init__(self):
-        if self.input_signal is not None:
-            self.senal_entrada = self.input_signal
-        else:
-            self.input_signal = self.senal_entrada
-
-        if self.stages is not None:
-            self.etapas = self.stages
-        else:
-            self.stages = self.etapas
-
     def senal_salida(self) -> list[float]:
         """Retorna la senal recuperada al final de la canalizacion."""
         return self.etapas[-1].senal_flotantes() if self.etapas else []
-
-    def output_signal(self) -> list[float]:
-        return self.senal_salida()
 
     def etapa(self, nombre: str) -> ResultadoEtapa | None:
         """Busca una etapa por su nombre."""
@@ -119,12 +52,6 @@ class ResultadoSistema:
             if e.nombre == nombre:
                 return e
         return None
-
-    def stage(self, name: str) -> ResultadoEtapa | None:
-        return self.etapa(name)
-
-
-SystemResult = ResultadoSistema
 
 
 class SistemaComunicacion:
@@ -138,15 +65,11 @@ class SistemaComunicacion:
         omega_rx: float | None = None,
         ventana_filtro: int = 3,
         config_canal: ConfiguracionCanal | None = None,
-        filter_window: int | None = None,
-        channel_cfg: ConfiguracionCanal | None = None,
     ):
         self.omega_tx = omega_tx
         self.omega_rx = omega_rx if omega_rx is not None else omega_tx
-        self.ventana_filtro = filter_window if filter_window is not None else ventana_filtro
-        self.filter_window = self.ventana_filtro
-        self.canal = Canal(channel_cfg or config_canal or ConfiguracionCanal())
-        self.channel = self.canal
+        self.ventana_filtro = ventana_filtro
+        self.canal = Canal(config_canal or ConfiguracionCanal())
 
     def ejecutar(
         self,
@@ -154,7 +77,7 @@ class SistemaComunicacion:
         registrar_historial: bool = False,
     ) -> ResultadoSistema:
         """
-        Ejecuta la canalizacion completa del sistema.
+        Ejecuta la canalizacion completa del sistema pasando las cintas de una MT a la siguiente.
         """
         N = len(senal_entrada)
         resultado = ResultadoSistema(senal_entrada=senal_entrada)
@@ -229,13 +152,3 @@ class SistemaComunicacion:
         ))
 
         return resultado
-
-    def run(
-        self,
-        input_signal: list[float],
-        record_history: bool = False,
-    ) -> ResultadoSistema:
-        return self.ejecutar(input_signal, registrar_historial=record_history)
-
-
-CommunicationSystem = SistemaComunicacion

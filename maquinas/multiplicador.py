@@ -4,14 +4,12 @@ MaquinaMultiplicador — Maquina de Turing que calcula el producto elemento a el
 MT_MULT: M = (Q, Sigma, Gamma, delta, q0, F)
 """
 
-from turing import MaquinaDeTuring, TuringMachine, FuncionTransicion, TransitionFunction
+from turing import MaquinaDeTuring, FuncionTransicion
 from codificacion import (
     ESCALA,
-    SCALE,
     SEP,
     BLANCO,
     ALFABETO_SENAL,
-    SIGNAL_ALPHABET,
     tokens_enteros_desde_cinta,
 )
 
@@ -55,7 +53,13 @@ def _construir_maquina_multiplicador(
     for k in range(N):
         a_val = enteros_senal_a[k]
         b_val = enteros_senal_b[k]
-        prod_val = round((a_val * b_val) / ESCALA)
+        
+        # Aritmetica simetrica en punto fijo Q8: (a * b) / 256 con redondeo exacto
+        prod_raw = a_val * b_val
+        if prod_raw >= 0:
+            prod_val = (prod_raw + ESCALA // 2) // ESCALA
+        else:
+            prod_val = -((-prod_raw + ESCALA // 2) // ESCALA)
 
         str_prod = str(prod_val)
         simbolos_escritos.update(list(str_prod))
@@ -77,7 +81,6 @@ def _construir_maquina_multiplicador(
 
         # Ahora el cabezal esta sobre el SEP de cierre del bloque k
         # 3. Rebobinar el cabezal hacia la izquierda para situarse al inicio del slot
-        #    (Mover L posiciones a la izquierda)
         for rew in range(SLOT_WIDTH):
             sig_rew = f"q_rew_{k}_{rew + 1}"
             Q.add(sig_rew)
@@ -86,7 +89,6 @@ def _construir_maquina_multiplicador(
             estado_actual = sig_rew
 
         # 4. Escribir el resultado del producto prod_k en el slot hacia la derecha
-        # Escribir los digitos de prod_val
         for idx, ch in enumerate(str_prod):
             sig_w = f"q_write_{k}_{idx + 1}"
             Q.add(sig_w)
@@ -105,7 +107,6 @@ def _construir_maquina_multiplicador(
 
         # El cabezal esta ahora sobre el SEP al final del bloque k
         if k == N - 1:
-            # Escribir el SEP final y pasar a q_fin
             for sym in legibles:
                 reglas.append((estado_actual, sym, q_fin, SEP, "R"))
 
@@ -139,11 +140,9 @@ class MaquinaMultiplicador:
     MT 1 (Tx) / MT 3 (Rx) — Multiplicador de senal elemento a elemento.
     """
 
-    def __init__(self, nombre: str | None = None, name: str | None = None):
-        self.nombre = nombre or name or "MT_MULT"
-        self.name = self.nombre
+    def __init__(self, nombre: str | None = None):
+        self.nombre = nombre or "MT_MULT"
         self._mt: MaquinaDeTuring | None = None
-        self._tm = None
         self._cinta_entrada: list[str] = []
 
     def cargar(self, enteros_senal_a: list[int], enteros_senal_b: list[int]) -> None:
@@ -151,10 +150,6 @@ class MaquinaMultiplicador:
         self._mt, self._cinta_entrada = _construir_maquina_multiplicador(
             self.nombre, enteros_senal_a, enteros_senal_b
         )
-        self._tm = self._mt
-
-    def load(self, signal_a_ints: list[int], signal_b_ints: list[int]) -> None:
-        self.cargar(signal_a_ints, signal_b_ints)
 
     def ejecutar(self, registrar_historial: bool = False):
         """Ejecuta la MT sobre la cinta cargada. Retorna ResultadoEjecucion."""
@@ -162,24 +157,12 @@ class MaquinaMultiplicador:
             raise RuntimeError("Debe llamar a cargar() antes de ejecutar()")
         return self._mt.ejecutar(self._cinta_entrada, registrar_historial=registrar_historial)
 
-    def run(self, record_history: bool = False):
-        return self.ejecutar(registrar_historial=record_history)
-
     def enteros_producto(self) -> list[int]:
         """Retorna la lista de enteros del producto leidos de la cinta tras la ejecucion."""
         resultado = self.ejecutar()
         return tokens_enteros_desde_cinta(resultado.contenido_cinta)
 
-    def product_integers(self) -> list[int]:
-        return self.enteros_producto()
-
     def describir(self) -> dict:
         if self._mt is None:
             return {"nombre": self.nombre, "estado": "no cargada"}
         return self._mt.describir()
-
-    def describe(self) -> dict:
-        return self.describir()
-
-
-MultiplierMachine = MaquinaMultiplicador

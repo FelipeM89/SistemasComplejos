@@ -2,20 +2,15 @@
 Paquete maquinas — componentes de Maquinas de Turing y canal del sistema.
 """
 
-from .oscilador import MaquinaOscilador, OscillatorMachine
-from .multiplicador import MaquinaMultiplicador, MultiplierMachine
-from .filtro import MaquinaFiltro, FilterMachine
-from .canal import Canal, Channel, ConfiguracionCanal, ChannelConfig
+from .oscilador import MaquinaOscilador
+from .multiplicador import MaquinaMultiplicador
+from .filtro import MaquinaFiltro
+from .canal import Canal, ConfiguracionCanal
 
 __all__ = [
     "MaquinaOscilador",
-    "OscillatorMachine",
     "MaquinaMultiplicador",
-    "MultiplierMachine",
     "MaquinaFiltro",
-    "FilterMachine",
     "Canal",
-    "Channel",
     "ConfiguracionCanal",
-    "ChannelConfig",
 ]

@@ -4,18 +4,9 @@ Visualizacion — graficos para la canalizacion del sistema de comunicacion.
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from comunicacion import ResultadoSistema, SystemResult
-from codificacion import ESCALA, SCALE
+from comunicacion import ResultadoSistema
+from codificacion import ESCALA
 
-
-_ETIQUETAS_ETAPAS = {
-    "MT_OSC_TX":  "Portadora TX: cos(w*n)",
-    "MT_OSC_RX":  "Portadora RX: cos(w*n)",
-    "MT_MULT_TX": "Senal modulada: x[n] * cos(w*n)",
-    "CANAL":      "Despues del canal: y[n]",
-    "MT_MULT_RX": "Demodulada: y[n] * cos(w*n)",
-    "MT_FILTER":  "Recuperada: x^[n] (filtro + ganancia x2)",
-}
 
 _COLORES = {
     "input":      "#4FC3F7",
@@ -97,9 +88,6 @@ def graficar_canalizacion(resultado_sistema: ResultadoSistema, ruta_guardado: st
     plt.close(fig)
 
 
-plot_pipeline = graficar_canalizacion
-
-
 def graficar_error(
     original: list[float],
     recuperada: list[float],
@@ -140,6 +128,3 @@ def graficar_error(
     else:
         plt.show()
     plt.close(fig)
-
-
-plot_error = graficar_error
