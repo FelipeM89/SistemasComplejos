@@ -93,6 +93,12 @@ class TestMaquinaOscilador(unittest.TestCase):
         r2 = tokens_enteros_desde_cinta(osc2.ejecutar().contenido_cinta)
         self.assertNotEqual(r1, r2)
 
+    def test_ejecucion_paso_a_paso_en_cinta(self):
+        osc = MaquinaOscilador("test_osc", n_muestras=4, omega=1.0)
+        resultado = osc.ejecutar(registrar_historial=True)
+        self.assertGreater(resultado.pasos, 0)
+        self.assertGreater(len(resultado.historial), 0)
+
 
 class TestMaquinaMultiplicador(unittest.TestCase):
     def test_multiplicacion_por_uno_es_identidad(self):
@@ -138,6 +144,15 @@ class TestMaquinaMultiplicador(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             mult.ejecutar()
 
+    def test_ejecucion_con_historial_y_pasos_reales(self):
+        mult = MaquinaMultiplicador("test_mult")
+        mult.cargar([128, -128], [256, 128])
+        resultado = mult.ejecutar(registrar_historial=True)
+        self.assertGreater(resultado.pasos, 10)
+        self.assertGreater(len(resultado.historial), 10)
+        salida = tokens_enteros_desde_cinta(resultado.contenido_cinta)
+        self.assertEqual(salida, [128, -64])
+
 
 class TestMaquinaFiltro(unittest.TestCase):
     def test_senal_constante_con_ganancia_unitaria(self):
@@ -177,6 +192,13 @@ class TestMaquinaFiltro(unittest.TestCase):
         enteros_salida = tokens_enteros_desde_cinta(resultado.contenido_cinta)
         for v in enteros_salida[4:]:
             self.assertLess(abs(v), ESCALA * 0.15)
+
+    def test_ejecucion_pasos_filtro_mayor_a_cero(self):
+        filtro = MaquinaFiltro("test_filt", ventana=3, ganancia=2.0)
+        filtro.cargar([100, 200, 300])
+        resultado = filtro.ejecutar(registrar_historial=True)
+        self.assertGreater(resultado.pasos, 20)
+        self.assertGreater(len(resultado.historial), 20)
 
 
 if __name__ == "__main__":
